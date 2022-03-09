@@ -1,0 +1,120 @@
+{
+  "min_packer_version": "1.0.0",
+  "variables": {
+    "infra_name": "caddy-proxy",
+    "infra_env": "production",
+    "aws_region": "us-east-1",
+    "aws_instance": "t3a.small",
+    "datadog_api_key":  null,
+    "dynamo_db_aws_access_key": "{{ aws_secretsmanager `caddy/secrets-production` `dynamo_db_aws_access_key` }}",
+    "dynamo_db_aws_secret_access_key": "{{ aws_secretsmanager `caddy/secrets-production` `dynamo_db_aws_secret_access_key` }}"
+  },
+  "builders": [
+    {
+      "type": "amazon-ebs",
+      "ami_name": "{{user `infra_name`}}-{{user `infra_env`}}-{{timestamp}}-proxy",
+      "instance_type": "{{user `aws_instance`}}",
+      "region": "{{user `aws_region`}}",
+      "profile": "YOUR_AWS_CREDENTIAL_PROFILE",
+      "vpc_filter": {
+        "filters": {
+          "tag:Name": "caddy-vpc-{{user `infra_env`}}",
+          "tag:Project": "caddy-proxy",
+          "tag:Environment": "{{user `infra_env`}}",
+          "tag:ManagedBy": "terraform",
+          "isDefault": "false"
+        }
+      },
+      "subnet_filter": {
+        "filters": {
+          "tag:Name": "caddy-public-subnet-{{user `infra_env`}}",
+          "tag:Project": "caddy-proxy",
+          "tag:Environment": "{{user `infra_env`}}",
+          "tag:ManagedBy": "terraform"
+        },
+        "most_free": true
+      },
+      "source_ami_filter": {
+        "filters": {
+          "architecture": "x86_64",
+          "name": "ubuntu/images/hvm-ssd/ubuntu-focal-20.04-amd64-server-*",
+          "root-device-type": "ebs",
+          "virtualization-type": "hvm"
+        },
+        "most_recent": true,
+        "owners": [
+          "099720109477"
+        ]
+      },
+      "ssh_username": "ubuntu",
+      "launch_block_device_mappings": [
+        {
+          "device_name": "/dev/sda1",
+          "volume_size": 8,
+          "delete_on_termination": true,
+          "encrypted": false,
+          "volume_type": "gp3",
+          "throughput": 125,
+          "iops": 3000
+        }
+      ],
+      "tags": {
+        "Name": "{{user `infra_name`}}-{{user `infra_env`}}-{{timestamp}}-proxy",
+        "Project": "caddy-proxy",
+        "Environment": "{{user `infra_env`}}",
+        "Role": "baked-ami",
+        "Unique": "baked-ami-{{timestamp}}",
+        "ManagedBy": "packer",
+        "Component": "proxy"
+      }
+    }
+  ],
+  "provisioners": [
+    {
+      "type": "file",
+      "source": "{{template_dir}}/caddy/caddy_linux_amd64_with_dynamo_db",
+      "destination": "/tmp/caddy"
+    },
+    {
+      "type": "file",
+      "source": "{{template_dir}}/caddy/caddy.service",
+      "destination": "/tmp/caddy.service"
+    },
+    {
+      "type": "file",
+      "source": "{{template_dir}}/caddy/Caddyfile-{{user `infra_env`}}",
+      "destination": "/tmp/Caddyfile"
+    },
+    {
+      "type": "file",
+      "source": "{{template_dir}}/apt/10periodic",
+      "destination": "/tmp/10periodic"
+    },
+    {
+      "type": "file",
+      "source": "{{template_dir}}/apt/50unattended-upgrades",
+      "destination": "/tmp/50unattended-upgrades"
+    },
+    {
+      "script": "{{template_dir}}/scripts/base.sh",
+      "type": "shell"
+    },
+    {
+      "environment_vars": [
+        "DATADOG_API_KEY={{user `datadog_api_key`}}",
+        "INFRA_ENV={{user `infra_env`}}"
+      ],
+      "script": "{{template_dir}}/scripts/datadog.sh",
+      "type": "shell"
+    },
+    {
+      "environment_vars": [
+        "DYNAMO_DB_AWS_ACCESS_KEY={{user `dynamo_db_aws_access_key`}}",
+        "DYNAMO_DB_AWS_SECRET_ACCESS_KEY={{user `dynamo_db_aws_secret_access_key`}}",
+        "DYNAMO_DB_AWS_REGION={{user `aws_region`}}"
+      ],
+      "script": "{{template_dir}}/scripts/caddy.sh",
+      "type": "shell"
+    }
+  ]
+}

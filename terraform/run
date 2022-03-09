@@ -1,0 +1,29 @@
+#!/usr/bin/env bash
+
+TF_ENV=$1 # staging, production, etc
+TF_STATE=$2 # network, data, compute
+TF_OPTIONS=$3 #any other options
+
+DIR="$( cd "$(dirname "${BASH_SOURCE[0]}")" >/dev/null 2>&1 && pwd )"
+
+# Always run from the location of this script
+cd $DIR
+
+if [ $# -gt 0 ]; then
+  if [ ! -d "$TF_ENV/$TF_STATE" ]; then
+      >&2 echo "Directory $DIR/$TF_ENV/$TF_STATE" does not exist
+      exit 1
+  fi
+
+  if [ "$3" == "init" ]; then
+    terraform -chdir=./$TF_ENV/$TF_STATE init \
+      -backend-config="bucket=YOUR-TERRAFORM-BUCKET" \
+      -backend-config="key=$TF_ENV/$TF_STATE.tfstate" \
+      -backend-config="dynamodb_table=YOUR_TERRAFORM_DYNAMO_DB_TABLE_$TF_ENV"
+  else
+    terraform -chdir=./$TF_ENV/$TF_STATE $TF_OPTIONS
+  fi
+fi
+
+# Head back to original location to avoid surprises
+cd -
